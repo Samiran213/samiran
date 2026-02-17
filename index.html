@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Original Speed Tester</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f8f9fa; }
+        .container { text-align: center; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 380px; }
+        svg { width: 280px; }
+        .bg { stroke: #e9ecef; stroke-width: 10; fill: none; stroke-linecap: round; }
+        .meter { stroke: #4285F4; stroke-width: 10; fill: none; stroke-linecap: round; stroke-dasharray: 126; stroke-dashoffset: 126; transition: stroke-dashoffset 0.8s ease-out; }
+        #speed { font-size: 54px; font-weight: bold; color: #3c4043; margin-top: -60px; }
+        #label { font-size: 16px; color: #70757a; margin-bottom: 10px; }
+        #quality { font-weight: bold; font-size: 18px; margin-bottom: 20px; }
+        button { padding: 12px 40px; font-size: 16px; font-weight: bold; background: #4285F4; color: white; border: none; border-radius: 30px; cursor: pointer; width: 100%; }
+        button:disabled { background: #ccc; }
+        .history-box { margin-top: 25px; border-top: 1px solid #eee; padding-top: 15px; text-align: left; }
+        table { width: 100%; font-size: 12px; color: #5f6368; border-collapse: collapse; }
+        td { padding: 5px 0; border-bottom: 1px solid #f9f9f9; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <svg viewBox="0 0 100 60">
+        <path class="bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+        <path id="meter" class="meter" d="M 10 50 A 40 40 0 0 1 90 50" />
+    </svg>
+    <div id="speed">0</div>
+    <div id="label">Mbps</div>
+    <div id="quality">READY</div>
+    <button id="start-btn" onclick="runFullTest()">RUN FULL TEST</button>
+
+    <div class="history-box">
+        <div style="font-weight: bold; font-size: 14px; margin-bottom: 10px;">Past Results (DL / UL)</div>
+        <table id="history-table"></table>
+    </div>
+</div>
+
+<script>
+    const meter = document.getElementById('meter');
+    const speedText = document.getElementById('speed');
+    const qualityText = document.getElementById('quality');
+    const btn = document.getElementById('start-btn');
+
+    function getQuality(mbps) {
+        if (mbps >= 10) return { text: "GOOD", color: "#0F9D58" };
+        if (mbps >= 3) return { text: "MEDIUM", color: "#F4B400" };
+        return { text: "POOR", color: "#DB4437" };
+    }
+
+    function saveResult(dl, ul) {
+        let history = JSON.parse(localStorage.getItem('speedHistory')) || [];
+        const q = getQuality(dl);
+        const newEntry = {
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            dl: dl,
+            ul: ul,
+            status: q.text,
+            color: q.color
+        };
+        history.unshift(newEntry);
+        localStorage.setItem('speedHistory', JSON.stringify(history.slice(0, 5)));
+        displayHistory();
+    }
+
+    function displayHistory() {
+        const history = JSON.parse(localStorage.getItem('speedHistory')) || [];
+        const table = document.getElementById('history-table');
+        table.innerHTML = history.map(item => `
+            <tr>
+                <td>${item.time}</td>
+                <td style="font-weight:bold; color:#4285F4;">↓ ${item.dl}</td>
+                <td style="font-weight:bold; color:#9c27b0;">↑ ${item.ul}</td>
+                <td style="color:${item.color}; text-align:right;">${item.status}</td>
+            </tr>
+        `).join('');
+    }
+
+    async function runFullTest() {
+        btn.disabled = true;
+        
+        // --- 1. DOWNLOAD TEST ---
+        qualityText.innerText = "TESTING DOWNLOAD...";
+        const dlStart = performance.now();
+        await fetch('https://httpbin.org/bytes/1000000?cb=' + dlStart);
+        const dlEnd = performance.now();
+        const dlMbps = (8 / ((dlEnd - dlStart) / 1000)).toFixed(1);
+        
+        // Update Gauge for Download
+        meter.style.strokeDashoffset = 126 - (Math.min(dlMbps, 20) / 20) * 126;
+        speedText.innerText = Math.floor(dlMbps);
+        
+        await new Promise(r => setTimeout(r, 1000)); // Short pause
+
+        // --- 2. UPLOAD TEST ---
+        qualityText.innerText = "TESTING UPLOAD...";
+        const ulData = new Uint8Array(500000); // 0.5MB data
+        const ulStart = performance.now();
+        await fetch('https://httpbin.org/post', { method: 'POST', body: ulData });
+        const ulEnd = performance.now();
+        const ulMbps = (4 / ((ulEnd - ulStart) / 1000)).toFixed(1);
+        
+        // Update Gauge for Upload
+        meter.style.strokeDashoffset = 126 - (Math.min(ulMbps, 20) / 20) * 126;
+        speedText.innerText = Math.floor(ulMbps);
+
+        const q = getQuality(dlMbps);
+        qualityText.innerText = q.text;
+        qualityText.style.color = q.color;
+
+        saveResult(dlMbps, ulMbps);
+        btn.disabled = false;
+    }
+
+    window.onload = displayHistory;
+</script>
+</body>
+</html>
